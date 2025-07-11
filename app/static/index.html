@@ -1,0 +1,569 @@
+<!--
+    BlueOS OpticalFlow Extension HTML file
+
+    The page includes these elements:
+    - Camera Type dropdown to select the camera being used (e.g. Siyi, XFRobot)
+    - RTSP URL of the live camera feed
+    - Horizontal FOV input
+    - Flight Controller SysID input to specify the vehicle's mavlink system ID
+    - Save Settings button to save the selected camera type and RTSP URL
+    - "Test Flow" button to view the live video and calculate optical flow values
+    - "Run" / "Stop" button to start or stop the optical flow backend including sending MAVLink messages to the vehicle.  This setting is persistent
+    - Captured Images display area to show the latest captured frame (appears only after Test button is pressed)
+    - Progress text area to display the status of the latest action
+
+    Each button calls function executed by the main.py python backend
+-->
+
+<html>
+    <head>
+        <title>OpticalFlow</title>
+        <link rel="icon" href="/favicon.ico" type="image/x-icon">
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+                margin: 20px;
+                background-color: #0088CC; /* BlueOS blue background */
+                color: white; /* White text for better contrast on blue */
+            }
+            h1 {
+                margin-bottom: 20px;
+            }
+            .container {
+                max-width: 800px;
+                margin: 0 auto;
+            }
+            .card {
+                border: 1px solid #ccc;
+                border-radius: 5px;
+                margin-bottom: 20px;
+                background-color: white; /* White card on blue background */
+                color: #333; /* Dark text for contrast on white card */
+            }
+            .card-body {
+                padding: 15px;
+            }
+            .row {
+                display: flex;
+                margin-bottom: 10px;
+            }
+            .col-form-label {
+                flex: 0 0 30%;
+            }
+            .col-sm-9 {
+                flex: 0 0 70%;
+            }
+            .form-control, .form-select {
+                width: 100%;
+                padding: 8px;
+                border: 1px solid #ccc;
+                border-radius: 4px;
+                box-sizing: border-box;
+            }
+            .btn {
+                padding: 8px 16px;
+                border-radius: 4px;
+                cursor: pointer;
+                border: none;
+                margin-right: 5px;
+            }
+            .btn-primary {
+                background-color: #0088CC; /* Use BlueOS blue for primary buttons */
+                color: white;
+            }
+            .btn-success {
+                background-color: #28a745;
+                color: white;
+            }
+            .btn-danger {
+                background-color: #dc3545;
+                color: white;
+            }
+            .btn-secondary {
+                background-color: #6c757d;
+                color: white;
+            }
+            textarea {
+                width: 100%;
+                font-family: monospace;
+                resize: vertical; /* Allow vertical resizing only, prevent horizontal resizing */
+                max-width: 100%; /* Ensure textarea doesn't exceed its container */
+                box-sizing: border-box; /* Include padding and border in the element's width */
+            }
+            .mb-3 {
+                margin-bottom: 15px;
+            }
+            .text-muted {
+                color: #6c757d;
+                font-size: 0.875em;
+            }
+        </style>
+
+    </head>
+    <body>
+        <div class="container">
+            <h1>Optical Flow</h1>
+            <div class="card">
+                <div class="card-body">
+                    <div class="row mb-3">
+                        <!-- Camera Type dropdown -->
+                        <label for="cameraType" class="col-form-label">Camera Type:</label>
+                        <div class="col-sm-9">
+                            <select class="form-select" id="cameraType">
+                                <!-- populated by fetchCameraConfigsAndInitDropdowns -->
+                            </select>
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <!-- RTSP URL input -->
+                        <label for="rtspUrl" class="col-form-label">RTSP URL:</label>
+                        <div class="col-sm-9">
+                            <input type="text" class="form-control" id="rtspUrl">
+                            <!-- populated by fetchCameraConfigsAndInitDropdowns -->
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <!-- Horizontal FOV input -->
+                        <label for="horizontalFov" class="col-form-label">Horizontal FOV (deg):</label>
+                        <div class="col-sm-9">
+                            <input type="number" class="form-control" id="horizontalFov" min="1" max="180" step="0.1">
+                            <!-- populated by fetchCameraConfigsAndInitDropdowns -->
+                        </div>
+                    </div>
+
+                    <div class="row mb-3">
+                        <!-- Flight Controller SysID input -->
+                        <label for="flightControllerSysId" class="col-form-label">Flight Controller SysID:</label>
+                        <div class="col-sm-9">
+                            <input type="number" class="form-control" id="flightControllerSysId" value="1" min="1" max="255">
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <!-- Use Gimbal Attitude checkbox -->
+                        <label class="col-form-label">Use Gimbal Attitude:</label>
+                        <div class="col-sm-9">
+                            <div class="form-check">
+                                <input type="checkbox" class="form-check-input" id="useGimbalAttitude" checked>
+                                <label class="form-check-label" for="useGimbalAttitude">
+                                    Enable
+                                </label>
+                            </div>
+                            <small class="form-text text-muted">If checked, flow only sent when gimbal facing downward</small>
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <!-- Action buttons -->
+                        <div class="col-sm-9" style="margin-left: auto;">
+                            <button id="saveSettingsBtn" class="btn btn-secondary">Save Settings</button>
+                            <button id="testBtn" class="btn btn-primary">Test</button>
+                            <button id="runBtn" class="btn btn-success">Run</button>
+                        </div>
+                    </div>
+                    <div class="row mb-3" id="imageDisplayRow" style="display: none;">
+                        <!-- Captured Image Display -->
+                        <label class="col-form-label">Captured Image:</label>
+                        <div class="col-sm-9">
+                            <img id="capturedImage" src="" alt="Captured frame" style="max-width: 100%; height: auto; border: 1px solid #ccc; border-radius: 5px;">
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <!-- Progress text area -->
+                        <label for="progressLog" class="col-form-label">Progress:</label>
+                        <div class="col-sm-9">
+                            <textarea id="progressLog" class="form-control" rows="10" readonly></textarea>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <script>
+            // Optical Flow management logic
+            document.addEventListener('DOMContentLoaded', async function() {
+                // get document elements which have no listeners
+                const rtspUrlInput = document.getElementById('rtspUrl');
+                const horizontalFovInput = document.getElementById('horizontalFov');
+                const flightControllerSysIdInput = document.getElementById('flightControllerSysId');
+                const useGimbalAttitudeCheckbox = document.getElementById('useGimbalAttitude');
+                const progressLog = document.getElementById('progressLog');
+
+                // Camera type change listener
+                const cameraTypeSelect = document.getElementById('cameraType');
+                cameraTypeSelect.addEventListener('change', cameraTypeChanged);
+
+                // Save settings button event listener
+                const saveSettingsBtn = document.getElementById('saveSettingsBtn');
+                saveSettingsBtn.addEventListener('click', saveSettings);
+
+                // Test button event listener
+                const testBtn = document.getElementById('testBtn');
+                testBtn.addEventListener('click', testOpticalFlow);
+
+                // Run button event listener
+                const runBtn = document.getElementById('runBtn');
+                runBtn.addEventListener('click', toggleOpticalFlow);
+
+                // Fetch camera configs from backend and initialize UI
+                let cameraConfigs = {};
+                await fetchCameraConfigsAndInitDropdowns();
+
+                // Load saved settings
+                loadSavedSettings();
+
+                // Check initial optical flow status
+                checkOpticalFlowStatus();
+
+                // Fetch camera configs from backend and populate dropdown
+                async function fetchCameraConfigsAndInitDropdowns() {
+                    try {
+                        const response = await fetch('/opticalflow/camera-configs');
+                        if (!response.ok) throw new Error('Failed to fetch camera configs');
+                        const data = await response.json();
+                        cameraConfigs = data.camera_configs || {};
+                        populateCameraTypeDropdown();
+                        // If no camera type is selected, select the first available
+                        if (!cameraTypeSelect.value && Object.keys(cameraConfigs).length > 0) {
+                            cameraTypeSelect.value = Object.keys(cameraConfigs)[0];
+                        }
+                        setDefaultCameraConfig(cameraTypeSelect.value);
+                    } catch (error) {
+                        console.error('Error fetching camera configs:', error);
+                        cameraConfigs = {};
+                    }
+                }
+
+                // Populate camera type dropdown from fetched configs
+                function populateCameraTypeDropdown() {
+                    // Remove all existing options
+                    cameraTypeSelect.innerHTML = '';
+                    for (const [key, config] of Object.entries(cameraConfigs)) {
+                        const option = document.createElement('option');
+                        option.value = key;
+                        option.textContent = config.name || key;
+                        cameraTypeSelect.appendChild(option);
+                    }
+                }
+
+                // Set default RTSP URL and FOV based on camera type
+                function setDefaultCameraConfig(cameraType) {
+                    const config = cameraConfigs[cameraType] || Object.values(cameraConfigs)[0];
+                    if (config) {
+                        rtspUrlInput.value = config.rtsp;
+                        horizontalFovInput.value = config.horizontal_fov;
+                    }
+                }
+
+                // Camera Type change handler
+                function cameraTypeChanged() {
+                    setDefaultCameraConfig(cameraTypeSelect.value);
+                }
+
+                // Save settings button event listener
+                function saveSettings() {
+                    const cameraType = cameraTypeSelect.value;
+                    const rtspUrl = rtspUrlInput.value;
+                    const horizontalFov = parseFloat(horizontalFovInput.value);
+                    const flightControllerSysId = parseInt(flightControllerSysIdInput.value) || 1;
+                    const useGimbalAttitude = useGimbalAttitudeCheckbox.checked;
+
+                    const params = new URLSearchParams({
+                        type: cameraType,
+                        rtsp: rtspUrl,
+                        fov: horizontalFov,
+                        flight_controller_sysid: flightControllerSysId,
+                        use_gimbal_attitude: useGimbalAttitude
+                    });
+
+                    fetch(`/opticalflow/save-settings?${params.toString()}`, {
+                        method: 'POST'
+                    })
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.success) {
+                                progressLog.value = "Settings saved successfully\n";
+                                progressLog.scrollTop = progressLog.scrollHeight;
+                            } else {
+                                progressLog.value = "Failed to save settings\n";
+                                progressLog.scrollTop = progressLog.scrollHeight;
+                            }
+                        })
+                        .catch(error => {
+                            progressLog.value = "Error saving settings\n";
+                            progressLog.scrollTop = progressLog.scrollHeight;
+                            console.error('Error:', error);
+                        });
+                }
+
+                // Load saved settings (only called when page is first loaded)
+                function loadSavedSettings() {
+                    fetch('/opticalflow/get-settings', { method: 'POST' })
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.success) {
+                                // Set camera type from last used
+                                if (data.last_used && data.last_used.camera_type) {
+                                    cameraTypeSelect.value = data.last_used.camera_type;
+                                }
+
+                                // Set RTSP URL from last used
+                                if (data.last_used && data.last_used.rtsp) {
+                                    rtspUrlInput.value = data.last_used.rtsp;
+                                }
+
+                                // Set FOV from last used
+                                if (data.last_used && data.last_used.horizontal_fov !== undefined) {
+                                    horizontalFovInput.value = data.last_used.horizontal_fov;
+                                } else {
+                                    // Set default FOV for current camera type
+                                    setDefaultCameraConfig(cameraTypeSelect.value);
+                                }
+
+                                // Set MAVLink settings
+                                if (data.mavlink && data.mavlink.flight_controller_sysid !== undefined) {
+                                    flightControllerSysIdInput.value = data.mavlink.flight_controller_sysid;
+                                }
+
+                                // Set Use Gimbal Attitude setting
+                                if (data.gimbal_attitude && data.gimbal_attitude.use_gimbal_attitude !== undefined) {
+                                    useGimbalAttitudeCheckbox.checked = data.gimbal_attitude.use_gimbal_attitude;
+                                } else {
+                                    // Default to checked if not specified
+                                    useGimbalAttitudeCheckbox.checked = true;
+                                }
+
+                                console.log('Settings loaded successfully');
+                            } else {
+                                console.error('Failed to load settings:', data.message);
+                            }
+                        })
+                        .catch(error => {
+                            console.error('Error loading settings:', error);
+                        });
+                }
+
+                // Test optical flow function
+                function testOpticalFlow() {
+                    const cameraType = cameraTypeSelect.value;
+                    const rtspUrl = rtspUrlInput.value;
+
+                    progressLog.value = `Testing optical flow detection\n`;
+                    progressLog.scrollTop = progressLog.scrollHeight;
+
+                    // Hide image initially
+                    const imageDisplayRow = document.getElementById('imageDisplayRow');
+                    const capturedImage = document.getElementById('capturedImage');
+                    imageDisplayRow.style.display = 'none';
+
+                    fetch(`/opticalflow/test?type=${cameraType}&rtsp=${encodeURIComponent(rtspUrl)}`, {
+                        method: 'POST'
+                    })
+                        .then(response => {
+                            // Check if response is OK and contains JSON
+                            if (!response.ok) {
+                                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                            }
+
+                            const contentType = response.headers.get('content-type');
+                            if (!contentType || !contentType.includes('application/json')) {
+                                return response.text().then(text => {
+                                    throw new Error(`Expected JSON response but got: ${text.substring(0, 200)}...`);
+                                });
+                            }
+
+                            return response.json();
+                        })
+                        .then(data => {
+                            if (data.success) {
+                                progressLog.value += data.message + '\n';
+
+                                // If there's image data, display it
+                                if (data.image_base64) {
+                                    capturedImage.src = 'data:image/jpeg;base64,' + data.image_base64;
+                                    imageDisplayRow.style.display = 'flex';
+                                    progressLog.value += 'Captured frame displayed above\n';
+                                }
+
+                                // Display optical flow results
+                                if (data.optical_flow) {
+                                    const flow = data.optical_flow;
+                                    if (flow.success) {
+                                        progressLog.value += `\nOptical Flow Results:\n`;
+                                        progressLog.value += `  Flow X: ${flow.flow_x?.toFixed(2) || 'N/A'} pixels\n`;
+                                        progressLog.value += `  Flow Y: ${flow.flow_y?.toFixed(2) || 'N/A'} pixels\n`;
+                                        progressLog.value += `  Delta Time: ${flow.dt?.toFixed(3) || 'N/A'} seconds\n`;
+                                    } else {
+                                        progressLog.value += `\nOptical Flow: ${flow.message || 'No flow detected'}\n`;
+                                    }
+                                }
+                            } else {
+                                progressLog.value += `Test failed: ${data.message}\n`;
+                                // Hide image on failure
+                                imageDisplayRow.style.display = 'none';
+                            }
+                            progressLog.scrollTop = progressLog.scrollHeight;
+                        })
+                        .catch(error => {
+                            progressLog.value += `Error during test: ${error}\n`;
+                            progressLog.scrollTop = progressLog.scrollHeight;
+                            // Hide image on error
+                            imageDisplayRow.style.display = 'none';
+                        });
+                }
+
+                // Toggle optical flow function
+                function toggleOpticalFlow() {
+                    const cameraType = cameraTypeSelect.value;
+                    const rtspUrl = rtspUrlInput.value;
+
+                    // Check if optical flow is currently running
+                    fetch('/opticalflow/status', { method: 'GET' })
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.running) {
+                                // Stop optical flow
+                                stopOpticalFlow();
+                            } else {
+                                // Start optical flow
+                                startOpticalFlow(cameraType, rtspUrl);
+                            }
+                        })
+                        .catch(error => {
+                            progressLog.value += `Error checking status: ${error}\n`;
+                            progressLog.scrollTop = progressLog.scrollHeight;
+                        });
+                }
+
+                // Start optical flow
+                function startOpticalFlow(cameraType, rtspUrl) {
+                    progressLog.value = `Starting optical flow...\n`;
+                    progressLog.scrollTop = progressLog.scrollHeight;
+
+                    fetch(`/opticalflow/start?type=${cameraType}&rtsp=${encodeURIComponent(rtspUrl)}`, {
+                        method: 'POST'
+                    })
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.success) {
+                                progressLog.value += "Optical flow started successfully\n";
+                                runBtn.textContent = "Stop";
+                                runBtn.className = "btn btn-danger";
+                                // Save the enabled state
+                                saveOpticalFlowState(true);
+                            } else {
+                                // failed to start, print error message and restore Run button
+                                progressLog.value += `Failed to start optical flow: ${data.message}\n`;
+                                runBtn.textContent = "Run";
+                                runBtn.className = "btn btn-success";
+                            }
+                            progressLog.scrollTop = progressLog.scrollHeight;
+                        })
+                        .catch(error => {
+                            // failed to start, print error message and restore Run button
+                            progressLog.value += `Error starting optical flow: ${error}\n`;
+                            runBtn.textContent = "Run";
+                            runBtn.className = "btn btn-success";
+                            progressLog.scrollTop = progressLog.scrollHeight;
+                        });
+                }
+
+                // Stop optical flow
+                function stopOpticalFlow() {
+                    progressLog.value = "Stopping optical flow...\n";
+                    progressLog.scrollTop = progressLog.scrollHeight;
+
+                    fetch('/opticalflow/stop', { method: 'POST' })
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.success) {
+                                progressLog.value += "Optical flow stopped\n";
+                                runBtn.textContent = "Run";
+                                runBtn.className = "btn btn-success";
+                                // Save the disabled state
+                                saveOpticalFlowState(false);
+                            } else {
+                                progressLog.value += `Failed to stop optical flow: ${data.message}\n`;
+                            }
+                            progressLog.scrollTop = progressLog.scrollHeight;
+                        })
+                        .catch(error => {
+                            progressLog.value += `Error stopping optical flow: ${error}\n`;
+                            progressLog.scrollTop = progressLog.scrollHeight;
+                        });
+                }
+
+                // Check optical flow status and update button accordingly
+                function checkOpticalFlowStatus() {
+                    // First check the saved enabled state from settings
+                    fetch('/opticalflow/get-enabled-state', { method: 'GET' })
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.success) {
+                                if (data.enabled) {
+                                    // Optical flow should be enabled, check if it's actually running
+                                    fetch('/opticalflow/status', { method: 'GET' })
+                                        .then(response => response.json())
+                                        .then(statusData => {
+                                            if (statusData.running) {
+                                                runBtn.textContent = "Stop";
+                                                runBtn.className = "btn btn-danger";
+                                            } else {
+                                                // failed to start, print error message and restore Run button
+                                                runBtn.textContent = "Run";
+                                                runBtn.className = "btn btn-success";
+                                                progressLog.value += "Optical flow was enabled but failed to start automatically\n";
+                                                progressLog.scrollTop = progressLog.scrollHeight;
+                                            }
+                                        })
+                                        .catch(error => {
+                                            console.error('Error checking optical flow runtime status:', error);
+                                        });
+                                } else {
+                                    // Optical flow should be disabled
+                                    runBtn.textContent = "Run";
+                                    runBtn.className = "btn btn-success";
+                                }
+                            } else {
+                                console.error('Failed to get optical flow enabled state:', data.message);
+                            }
+                        })
+                        .catch(error => {
+                            console.error('Error checking optical flow enabled state:', error);
+                            // Fallback to just checking runtime status
+                            fetch('/opticalflow/status', { method: 'GET' })
+                                .then(response => response.json())
+                                .then(data => {
+                                    if (data.running) {
+                                        runBtn.textContent = "Stop";
+                                        runBtn.className = "btn btn-danger";
+                                    } else {
+                                        runBtn.textContent = "Run";
+                                        runBtn.className = "btn btn-success";
+                                    }
+                                })
+                                .catch(error => {
+                                    console.error('Error checking optical flow status:', error);
+                                });
+                        });
+                }
+
+                // Save optical flow enabled state to settings
+                function saveOpticalFlowState(enabled) {
+                    fetch(`/opticalflow/save-enabled-state?enabled=${enabled}`, {
+                        method: 'POST'
+                    })
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.success) {
+                                console.log(`Optical flow state saved: ${enabled}`);
+                            } else {
+                                console.error('Failed to save optical flow state:', data.message);
+                            }
+                        })
+                        .catch(error => {
+                            console.error('Error saving optical flow state:', error);
+                        });
+                }
+            });
+        </script>
+    </body>
+</html>

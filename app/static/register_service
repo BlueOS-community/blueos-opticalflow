@@ -1,0 +1,10 @@
+{
+    "name": "OpticalFlow",
+    "description": "BlueOS Extension to perform optical flow using an ethernet enabled camera gimbal.",
+    "icon": "mdi-waves-arrow-right",
+    "company": "ArduPilot",
+    "version": "0.0.1",
+    "new_page": false,
+    "webpage": "https://github.com/rmackay9/blueos-opticalflow",
+    "api": ""
+}
