@@ -44,6 +44,7 @@ logger.addHandler(console_handler)
 
 app = FastAPI()
 
+
 # Global exception handler to ensure all errors return JSON
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
@@ -440,6 +441,7 @@ def angle_between_quaternions(q1, q2):
     dot = min(1.0, max(-1.0, dot))  # Clamp for acos
     return 2 * math.acos(dot)  # in radians
 
+
 # Optical Flow API Endpoints
 
 # Get the list of available camera configs (RTSP and FOV)
@@ -619,8 +621,6 @@ async def get_opticalflow_status() -> Dict[str, Any]:
 @app.post("/opticalflow/start")
 async def start_opticalflow(type: str = Query(...), rtsp: str = Query(...)) -> Dict[str, Any]:
     """Start opticalflow"""
-    global opticalflow_running
-
     logger.info(f"Start opticalflow request received for type={type}, rtsp={rtsp}")
 
     try:

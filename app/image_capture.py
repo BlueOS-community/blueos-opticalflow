@@ -40,8 +40,6 @@ def capture_frame_from_stream(rtsp_url: str, last_frame_time=None) -> Dict[str, 
     Returns:
         Dictionary with success status, frame data (numpy array), and capture time
     """
-    global rtsp_stream_reader
-
     # logging prefix for all messages from this function
     logging_prefix_str = "capture_frame_from_stream:"
 
@@ -96,8 +94,6 @@ def cleanup_video_capture():
     Clean up the video capture object and release resources.
     Should be called when stopping opticalflow or when done.
     """
-    global rtsp_stream_reader
-
     with video_capture_mutex:
         # Stop the RTSP stream reader
         rtsp_stream_reader.stop()

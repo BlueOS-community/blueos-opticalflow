@@ -304,7 +304,7 @@ def get_gimbal_attitude(sysid: int) -> Dict[str, Any]:
 
                     return {
                         "success": True,
-                        "message": f"Gimbal attitude retrieved successfully",
+                        "message": "Gimbal attitude retrieved successfully",
                         "quaternion": {
                             "w": q[0],
                             "x": q[1],
